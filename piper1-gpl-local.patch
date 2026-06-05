@@ -1,0 +1,140 @@
+diff --git a/src/piper/phonemize_espeak.py b/src/piper/phonemize_espeak.py
+index 1eab943..00cc40e 100644
+--- a/src/piper/phonemize_espeak.py
++++ b/src/piper/phonemize_espeak.py
+@@ -14,7 +14,16 @@ class EspeakPhonemizer:
+ 
+     def __init__(self, espeak_data_dir: Union[str, Path] = ESPEAK_DATA_DIR) -> None:
+         """Initialize phonemizer."""
+-        from . import espeakbridge  # avoid circular import
++        try:
++            from . import espeakbridge  # avoid circular import
++        except ImportError as err:
++            raise ImportError(
++                "Could not import piper.espeakbridge. This module is a compiled "
++                "extension, so running Piper directly from the repo requires a "
++                "dev build first: `python3 setup.py build_ext --inplace`. "
++                "If you are setting `PYTHONPATH` to `src/`, make sure you run "
++                "that command from the repository root before training."
++            ) from err
+ 
+         espeakbridge.initialize(str(espeak_data_dir))
+ 
+diff --git a/src/piper/train/vits/dataset.py b/src/piper/train/vits/dataset.py
+index 1560bd8..acd4680 100644
+--- a/src/piper/train/vits/dataset.py
++++ b/src/piper/train/vits/dataset.py
+@@ -5,6 +5,7 @@ import itertools
+ import json
+ import logging
+ import math
++import os
+ import unicodedata
+ from dataclasses import dataclass
+ from enum import Enum
+@@ -196,15 +197,20 @@ class VitsDataModule(L.LightningDataModule):
+ 
+             self.piper_config.speaker_id_map = speaker_id_map
+ 
+-        # Write config
++        # Write config atomically: with DDP, multiple ranks may run
++        # prepare_data() (see setup() fallback) and write the same file.
+         self.config_path.parent.mkdir(parents=True, exist_ok=True)
+-        with open(self.config_path, "w", encoding="utf-8") as config_file:
++        config_tmp_path = self.config_path.with_name(
++            f"{self.config_path.name}.{os.getpid()}.tmp"
++        )
++        with open(config_tmp_path, "w", encoding="utf-8") as config_file:
+             json.dump(
+                 self.piper_config.to_dict(),
+                 config_file,
+                 ensure_ascii=False,
+                 indent=2,
+             )
++        os.replace(config_tmp_path, self.config_path)
+ 
+         if self.phoneme_type == PhonemeType.PINYIN:
+             from piper.phonemize_chinese import ChinesePhonemizer
+@@ -378,6 +384,14 @@ class VitsDataModule(L.LightningDataModule):
+         _LOGGER.info("Processed %s utterance(s)", num_utterances)
+ 
+     def setup(self, stage: str) -> None:
++        if self.piper_config is None:
++            # With DDP, Lightning calls prepare_data() on local rank 0 only,
++            # but every rank needs self.piper_config in memory. Lightning
++            # places a barrier before setup(), so rank 0 has already finished
++            # building the cache; calling prepare_data() here is idempotent
++            # (cache files are only written when missing).
++            self.prepare_data()
++
+         assert self.piper_config is not None
+ 
+         all_utts: list[CachedUtterance] = []
+@@ -413,7 +427,7 @@ class VitsDataModule(L.LightningDataModule):
+                 cache_id = get_cache_id(row_number, text, speaker_id=speaker_id)
+ 
+                 phoneme_ids_path = self.cache_dir / f"{cache_id}.phonemes.pt"
+-                if not phoneme_ids_path:
++                if not phoneme_ids_path.exists():
+                     _LOGGER.warning(
+                         "Missing phoneme ids for %s: %s",
+                         audio_path,
+@@ -422,7 +436,7 @@ class VitsDataModule(L.LightningDataModule):
+                     continue
+ 
+                 audio_norm_path = self.cache_dir / f"{cache_id}.audio.pt"
+-                if not audio_norm_path:
++                if not audio_norm_path.exists():
+                     _LOGGER.warning(
+                         "Missing normalized audio for %s: %s",
+                         audio_path,
+@@ -431,7 +445,7 @@ class VitsDataModule(L.LightningDataModule):
+                     continue
+ 
+                 audio_spec_path = self.cache_dir / f"{cache_id}.spec.pt"
+-                if not audio_spec_path:
++                if not audio_spec_path.exists():
+                     _LOGGER.warning(
+                         "Missing mel spec for %s: %s",
+                         audio_path,
+@@ -469,6 +483,7 @@ class VitsDataModule(L.LightningDataModule):
+                 is_multispeaker=(self.num_speakers > 1), segment_size=self.segment_size
+             ),
+             batch_size=self.batch_size,
++            shuffle=True,
+             num_workers=self.num_workers,
+         )
+ 
+diff --git a/tests/test_espeak_phonemizer.py b/tests/test_espeak_phonemizer.py
+index 57124c7..f12f309 100644
+--- a/tests/test_espeak_phonemizer.py
++++ b/tests/test_espeak_phonemizer.py
+@@ -1,3 +1,8 @@
++import builtins
++from unittest.mock import patch
++
++import pytest
++
+ from piper.phonemize_espeak import EspeakPhonemizer
+ 
+ 
+@@ -7,3 +12,19 @@ def test_phonemize() -> None:
+     assert phonemizer.phonemize("en-us", "test") == [
+         ["t", "ˈ", "ɛ", "s", "t"],
+     ]
++
++
++def test_missing_espeakbridge_has_actionable_error() -> None:
++    """Missing compiled extension should point to the dev build step."""
++
++    real_import = builtins.__import__
++
++    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
++        if (level == 1) and ("espeakbridge" in fromlist):
++            raise ImportError("missing extension")
++
++        return real_import(name, globals, locals, fromlist, level)
++
++    with patch("builtins.__import__", side_effect=_fake_import):
++        with pytest.raises(ImportError, match=r"build_ext --inplace"):
++            EspeakPhonemizer()

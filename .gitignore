@@ -1,0 +1,30 @@
+# Secrets and local tool state
+.env
+pipeline.env
+.claude/
+.agents/
+.codex/
+.omo/
+
+# Vendored checkout — patched code lives in the Khang-Water/piper1-gpl fork
+piper1-gpl/
+
+# Stray artifacts
+/17
+
+# Secret/local datasets and training artifacts
+local/
+output/
+checkpoints/
+*.ckpt
+*.onnx
+*.onnx.json
+*.pt
+*.pth
+*.log
+
+# Python/runtime
+.venv/
+__pycache__/
+*.py[cod]
+
