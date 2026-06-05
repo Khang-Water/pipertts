@@ -49,3 +49,15 @@ Trạng thái hiểu bài qua quiz. ✓ = đã verify qua quiz/restate, ◐ = đ
 - [ ] Human can explain what `preflight_training.py` checks and why each check prevents expensive failure.
 - [ ] Human can explain why `MAX_STEPS` is absolute when resuming from `--ckpt_path`.
 - [ ] Human can explain why checkpoint sanitizer is allowed only for trusted HF checkpoint.
+
+## No-sudo remote dependency branch
+
+- [ ] Problem: `sudo apt-get install -y build-essential cmake ninja-build espeak-ng` needs root because it writes system packages into `/usr`/system paths.
+- [ ] Why it matters: Piper/phonemization builds often need a C/C++ compiler, CMake, Ninja, and the `espeak-ng` runtime/library.
+- [ ] Branch A: Ask admin for system packages when the remote is managed and long-lived.
+- [ ] Branch B: Use Conda/Mamba packages in user space when no sudo is allowed.
+- [ ] Conda edge case: `espeak-ng` may not exist as a conda package; current Piper embeds `espeak-ng` inside the Python wheel, so do not block on the standalone binary unless a script directly calls `espeak-ng`.
+- [ ] Branch C: Build missing tools under `$HOME/.local` only if Conda cannot provide them.
+- [ ] Branch D: Use Docker/Apptainer only if the server policy allows containers.
+- [ ] Verification: confirm `gcc`, `cmake`, `ninja`, and `espeak-ng` are visible on `PATH`.
+- [ ] Pipeline launch condition: run `./run_pipeline.sh` only from an activated env that exposes `gcc`, `g++`, `cmake`, `ninja`, and Python packages; create `pipeline.env` from `pipeline.env.example` before expecting dataset prep to work.

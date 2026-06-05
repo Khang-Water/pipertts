@@ -76,23 +76,34 @@ newest_last_ckpt() {
 
 log "pipeline start: log=${LOG_FILE}"
 
-# --- Stage 1: system dependencies -------------------------------------------
-log "stage 1/9: system dependencies"
+# --- Stage 1: build dependencies ---------------------------------------------
+# espeak-ng itself is vendored and built from source by piper1-gpl's CMake,
+# so only cmake/ninja/a C++ compiler are needed — no sudo required:
+#   conda install -y -c conda-forge cxx-compiler cmake ninja
+log "stage 1/9: build dependencies"
 missing=()
-for cmd in cmake ninja espeak-ng cc python3; do
+for cmd in cmake ninja python3; do
   command -v "${cmd}" >/dev/null 2>&1 || missing+=("${cmd}")
 done
+if [[ -z "${CC:-}" ]] && ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1; then
+  missing+=("cc/gcc")
+fi
 if (( ${#missing[@]} > 0 )); then
-  die "missing system commands: ${missing[*]} — run: sudo apt-get install -y build-essential cmake ninja-build espeak-ng"
+  die "missing build tools: ${missing[*]} — no sudo: conda install -y -c conda-forge cxx-compiler cmake ninja | with sudo: apt-get install -y build-essential cmake ninja-build"
 fi
 
-# --- Stage 2: venv + piper install + compiled extensions --------------------
+# --- Stage 2: python env + piper install + compiled extensions ---------------
 log "stage 2/9: python environment"
-if [[ ! -f "${SCRIPT_DIR}/.venv/bin/activate" ]]; then
-  python3 -m venv "${SCRIPT_DIR}/.venv"
+if [[ -n "${CONDA_PREFIX:-}" ]]; then
+  # Active conda env: install straight into it, no venv layer.
+  log "using active conda env: ${CONDA_PREFIX}"
+else
+  if [[ ! -f "${SCRIPT_DIR}/.venv/bin/activate" ]]; then
+    python3 -m venv "${SCRIPT_DIR}/.venv"
+  fi
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/.venv/bin/activate"
 fi
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/.venv/bin/activate"
 
 if python3 - <<'PY' >/dev/null 2>&1
 import lightning
@@ -106,6 +117,7 @@ then
 else
   log "installing piper[train] + building extensions (first run: slow, downloads torch)"
   pip install -e "${PIPER_DIR}[train]"
+  pip install cython scikit-build  # cythonize + skbuild for the dev builds below
   (cd "${PIPER_DIR}" && bash build_monotonic_align.sh)
   (cd "${PIPER_DIR}" && python3 setup.py build_ext --inplace)
 fi
