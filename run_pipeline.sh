@@ -95,7 +95,10 @@ fi
 # --- Stage 2: python env + piper install + compiled extensions ---------------
 log "stage 2/9: python environment"
 if [[ -n "${CONDA_PREFIX:-}" ]]; then
-  # Active conda env: install straight into it, no venv layer.
+  # Active conda env: install straight into it, no venv layer. Block
+  # ~/.local/lib site-packages from leaking into the env (version conflicts,
+  # broken half-installed dists).
+  export PYTHONNOUSERSITE=1
   log "using active conda env: ${CONDA_PREFIX}"
 else
   if [[ ! -f "${SCRIPT_DIR}/.venv/bin/activate" ]]; then
@@ -116,7 +119,7 @@ then
   log "environment ready (skip install)"
 else
   log "installing piper[train] + building extensions (first run: slow, downloads torch)"
-  pip install -e "${PIPER_DIR}[train]"
+  (cd "${PIPER_DIR}" && pip install -e '.[train]')  # newer pip rejects "-e /abs/path[extras]"
   pip install cython scikit-build  # cythonize + skbuild for the dev builds below
   (cd "${PIPER_DIR}" && bash build_monotonic_align.sh)
   (cd "${PIPER_DIR}" && python3 setup.py build_ext --inplace)
