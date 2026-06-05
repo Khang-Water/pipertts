@@ -92,6 +92,13 @@ if (( ${#missing[@]} > 0 )); then
   die "missing build tools: ${missing[*]} — no sudo: conda install -y -c conda-forge cxx-compiler cmake ninja | with sudo: apt-get install -y build-essential cmake ninja-build"
 fi
 
+# piper1-gpl is not committed in this repo — clone the patched fork on demand.
+PIPER_REPO_URL="${PIPER_REPO_URL:-https://github.com/Khang-Water/piper1-gpl.git}"
+if [[ ! -d "${PIPER_DIR}/src/piper" ]]; then
+  log "piper1-gpl missing — cloning ${PIPER_REPO_URL}"
+  git clone "${PIPER_REPO_URL}" "${PIPER_DIR}"
+fi
+
 # --- Stage 2: python env + piper install + compiled extensions ---------------
 log "stage 2/9: python environment"
 if [[ -n "${CONDA_PREFIX:-}" ]]; then
