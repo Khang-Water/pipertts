@@ -100,7 +100,13 @@ def resolve_audio_path(audio_dir: Path, raw_path: str) -> Path:
     audio_path = Path(raw_path)
     if not audio_path.is_absolute():
         audio_path = audio_dir / audio_path
-    return audio_path.expanduser().resolve()
+    audio_path = audio_path.expanduser().resolve()
+    if not audio_path.exists() and not audio_path.suffix:
+        # Some manifests list utterance ids without the audio extension.
+        wav_path = audio_path.with_suffix(".wav")
+        if wav_path.exists():
+            return wav_path
+    return audio_path
 
 
 def sanitize_text(text: str) -> str:
