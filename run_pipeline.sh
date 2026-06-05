@@ -117,6 +117,7 @@ fi
 
 if python3 - <<'PY' >/dev/null 2>&1
 import lightning
+import onnxscript
 import torch
 
 import piper.espeakbridge
@@ -127,7 +128,8 @@ then
 else
   log "installing piper[train] + building extensions (first run: slow, downloads torch)"
   (cd "${PIPER_DIR}" && pip install -e '.[train]')  # newer pip rejects "-e /abs/path[extras]"
-  pip install cython scikit-build  # cythonize + skbuild for the dev builds below
+  # cythonize + skbuild for the dev builds below; onnxscript for torch>=2.x ONNX export
+  pip install cython scikit-build onnxscript
   (cd "${PIPER_DIR}" && bash build_monotonic_align.sh)
   (cd "${PIPER_DIR}" && python3 setup.py build_ext --inplace)
 fi
