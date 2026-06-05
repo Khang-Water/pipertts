@@ -177,6 +177,11 @@ global steps (default 5000), keeps `CKPT_SAVE_TOP_K` step checkpoints
 BATCH_SIZE * NUM_GPUS * ACCUMULATE_GRAD_BATCHES
 ```
 
+Shared server: set `CUDA_VISIBLE_DEVICES` in `pipeline.env` to the GPU
+index(es) you were assigned — Lightning otherwise takes GPU 0 regardless of
+who is using it. With a single GPU, use `NUM_GPUS=1 BATCH_SIZE=32`: the
+effective batch stays 32, DDP is skipped, and preflight expects 1 GPU.
+
 Start conservative. If stable, increase `BATCH_SIZE`; if OOM, lower it. On A100, `bf16-mixed` is default because it is usually more stable than fp16 while keeping tensor-core speed.
 
 ## 7. Export
