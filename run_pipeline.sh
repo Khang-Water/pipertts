@@ -25,6 +25,10 @@ PIPER_DIR="${PIPER_DIR:-${SCRIPT_DIR}/piper1-gpl}"
 DATASET_DIR="${DATASET_DIR:-${SCRIPT_DIR}/local/secret_single_speaker}"
 MANIFEST="${MANIFEST:-}"
 SRC_AUDIO_DIR="${SRC_AUDIO_DIR:-/}"
+MANIFEST_DELIMITER="${MANIFEST_DELIMITER:-|}"
+MANIFEST_HAS_HEADER="${MANIFEST_HAS_HEADER:-0}"
+PATH_COLUMN="${PATH_COLUMN:-0}"
+TEXT_COLUMN="${TEXT_COLUMN:-1}"
 VOICE_NAME="${VOICE_NAME:-vi_VN-secret-medium}"
 ESPEAK_VOICE="${ESPEAK_VOICE:-vi}"
 SAMPLE_RATE="${SAMPLE_RATE:-22050}"
@@ -113,16 +117,21 @@ if [[ -f "${DATASET_DIR}/metadata.csv" && -f "${DATASET_DIR}/training.env" && "$
 else
   [[ -n "${MANIFEST}" ]] || die "MANIFEST is not set; copy pipeline.env.example to pipeline.env and fill it in"
   [[ -f "${MANIFEST}" ]] || die "manifest not found: ${MANIFEST}"
-  python3 "${SCRIPT_DIR}/prepare_single_speaker_dataset.py" \
-    --manifest "${MANIFEST}" \
-    --audio-dir "${SRC_AUDIO_DIR}" \
-    --output-dir "${DATASET_DIR}" \
-    --delimiter '|' \
-    --sample-rate "${SAMPLE_RATE}" \
-    --min-duration-s "${MIN_DURATION_S}" \
-    --max-duration-s "${MAX_DURATION_S}" \
-    --voice-name "${VOICE_NAME}" \
+  prepare_args=(
+    --manifest "${MANIFEST}"
+    --audio-dir "${SRC_AUDIO_DIR}"
+    --output-dir "${DATASET_DIR}"
+    --delimiter "${MANIFEST_DELIMITER}"
+    --path-column "${PATH_COLUMN}"
+    --text-column "${TEXT_COLUMN}"
+    --sample-rate "${SAMPLE_RATE}"
+    --min-duration-s "${MIN_DURATION_S}"
+    --max-duration-s "${MAX_DURATION_S}"
+    --voice-name "${VOICE_NAME}"
     --espeak-voice "${ESPEAK_VOICE}"
+  )
+  [[ "${MANIFEST_HAS_HEADER}" == "1" ]] && prepare_args+=(--has-header)
+  python3 "${SCRIPT_DIR}/prepare_single_speaker_dataset.py" "${prepare_args[@]}"
 fi
 
 # --- Stage 4: base checkpoint ------------------------------------------------

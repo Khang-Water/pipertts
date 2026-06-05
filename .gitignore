@@ -5,6 +5,7 @@ pipeline.env
 .agents/
 .codex/
 .omo/
+.serena/
 
 # Vendored checkout — patched code lives in the Khang-Water/piper1-gpl fork
 piper1-gpl/
