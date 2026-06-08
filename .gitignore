@@ -15,6 +15,11 @@ piper1-gpl/
 
 # Secret/local datasets and training artifacts
 local/
+dataset.csv
+*.wav
+compare_out/
+piper_gpl/
+vais1000_base/
 output/
 checkpoints/
 *.ckpt
