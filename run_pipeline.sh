@@ -167,24 +167,32 @@ bash "${SCRIPT_DIR}/download_base_checkpoint.sh"
 log "stage 5/9: resolve checkpoint and step target"
 RESUME_CKPT="$(newest_last_ckpt)"
 if [[ -n "${RESUME_CKPT}" ]]; then
+  # Our own checkpoints are v2.x and preserve global_step across restarts.
   CHECKPOINT="${RESUME_CKPT}"
+  CKPT_STEP_RESETS=0
+  CURRENT_STEP="$(ckpt_step "${CHECKPOINT}")"
   log "resuming from: ${CHECKPOINT}"
 else
+  # The rhasspy base is Lightning v1.7; its global_step (919580 in the file)
+  # is dropped on upgrade to v2.x, so training actually starts at step 0.
   CHECKPOINT="${BASE_CKPT}"
-  log "starting from base: ${CHECKPOINT}"
+  CKPT_STEP_RESETS=1
+  CURRENT_STEP=0
+  log "starting from base: ${CHECKPOINT} (global_step resets to 0 on load)"
 fi
 
+# Target is an ABSOLUTE global_step counted from 0 — NOT base+extra. Fine-tuning
+# from the base starts at step 0 (see above), so EXTRA_STEPS is the total number
+# of training steps. VITS advances global_step by 2 per batch (G+D optimizers).
 if [[ -f "${TARGET_STEP_FILE}" ]]; then
   TARGET_STEP="$(cat "${TARGET_STEP_FILE}")"
   log "existing target: ${TARGET_STEP} global steps (delete ${TARGET_STEP_FILE} to retarget)"
 else
-  BASE_STEP="$(ckpt_step "${BASE_CKPT}")"
-  TARGET_STEP="$((BASE_STEP + EXTRA_STEPS))"
+  TARGET_STEP="${EXTRA_STEPS}"
   echo "${TARGET_STEP}" > "${TARGET_STEP_FILE}"
-  log "new target: base ${BASE_STEP} + EXTRA_STEPS ${EXTRA_STEPS} = ${TARGET_STEP}"
+  log "new target: ${TARGET_STEP} global steps (from 0)"
 fi
 
-CURRENT_STEP="$(ckpt_step "${CHECKPOINT}")"
 log "current step: ${CURRENT_STEP} / target: ${TARGET_STEP}"
 
 TRAIN_NEEDED=1
@@ -198,7 +206,7 @@ if (( TRAIN_NEEDED )); then
   log "stage 6/9: preflight"
   preflight_args=(--dataset-dir "${DATASET_DIR}" --piper-dir "${PIPER_DIR}" --expect-gpus "${NUM_GPUS}")
   [[ "${STRICT_PREFLIGHT}" == "1" ]] && preflight_args+=(--strict)
-  CHECKPOINT="${CHECKPOINT}" MAX_STEPS="${TARGET_STEP}" \
+  CHECKPOINT="${CHECKPOINT}" MAX_STEPS="${TARGET_STEP}" CKPT_STEP_RESETS="${CKPT_STEP_RESETS}" \
     python3 "${SCRIPT_DIR}/preflight_training.py" "${preflight_args[@]}"
 
   # --- Stage 7: cache (single process, before DDP) ----------------------------
@@ -210,9 +218,11 @@ if (( TRAIN_NEEDED )); then
   # --- Stage 8: dry-run config validation, then train -------------------------
   log "stage 8/9: train (dry-run first)"
   DRY_RUN=1 CHECKPOINT="${CHECKPOINT}" MAX_STEPS="${TARGET_STEP}" EXTRA_STEPS= \
+    CKPT_STEP_RESETS="${CKPT_STEP_RESETS}" \
     bash "${SCRIPT_DIR}/finetune_single_speaker.sh" >/dev/null
   log "dry-run OK, starting real training"
   CHECKPOINT="${CHECKPOINT}" MAX_STEPS="${TARGET_STEP}" EXTRA_STEPS= \
+    CKPT_STEP_RESETS="${CKPT_STEP_RESETS}" \
     bash "${SCRIPT_DIR}/finetune_single_speaker.sh"
 fi
 

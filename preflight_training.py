@@ -152,14 +152,19 @@ def main() -> int:
                 report["checkpoint_load"] = "weights_only_ok"
                 base_step = ckpt_data.get("global_step")
                 report["checkpoint_global_step"] = base_step
-                # --ckpt_path resumes trainer state: max_steps is absolute,
-                # compared against the restored global_step.
+                # A pre-v2 checkpoint loses its fit-loop state on upgrade, so
+                # global_step resets to 0 even though the file says otherwise.
+                # CKPT_STEP_RESETS=1 reflects that; the effective start is 0.
+                if os.environ.get("CKPT_STEP_RESETS") == "1":
+                    base_step = 0
+                report["effective_start_step"] = base_step
+                # max_steps is absolute, compared against the effective start.
                 max_steps_env = os.environ.get("MAX_STEPS")
                 if base_step is not None and max_steps_env:
                     if int(max_steps_env) <= int(base_step):
                         errors.append(
-                            f"MAX_STEPS={max_steps_env} <= checkpoint global_step={base_step}; "
-                            "trainer would stop immediately (use EXTRA_STEPS instead)"
+                            f"MAX_STEPS={max_steps_env} <= effective start global_step={base_step}; "
+                            "trainer would stop immediately"
                         )
             except Exception as exc:
                 report["checkpoint_load"] = f"failed:{exc.__class__.__name__}"

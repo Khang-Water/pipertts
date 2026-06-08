@@ -48,10 +48,16 @@ if [[ -z "${CHECKPOINT}" || ! -f "${CHECKPOINT}" ]]; then
   exit 1
 fi
 
-# --ckpt_path resumes trainer state, so max_steps is compared against the
-# checkpoint's restored global_step (not zero). Read it up front so we can
-# fail fast instead of silently training for 0 steps.
-BASE_GLOBAL_STEP="$(python3 - "${CHECKPOINT}" <<'PY'
+# Effective starting global_step. The number stored INSIDE a checkpoint file
+# is not always the step the trainer resumes from: a Lightning v1.7 checkpoint
+# (e.g. the rhasspy base) loses its fit-loop state when upgraded to v2.x, so
+# global_step RESETS to 0 on load even though the file still says 919580.
+# CKPT_STEP_RESETS=1 tells us that; otherwise read the real value (our own
+# v2.x checkpoints preserve it).
+if [[ "${CKPT_STEP_RESETS:-0}" == "1" ]]; then
+  BASE_GLOBAL_STEP=0
+else
+  BASE_GLOBAL_STEP="$(python3 - "${CHECKPOINT}" <<'PY'
 import sys
 
 import torch
@@ -63,9 +69,10 @@ if step is None:
 print(int(step))
 PY
 )"
+fi
 
 if [[ -n "${EXTRA_STEPS}" && -n "${MAX_STEPS}" ]]; then
-  echo "set either EXTRA_STEPS (steps beyond the checkpoint) or MAX_STEPS (absolute), not both" >&2
+  echo "set either EXTRA_STEPS (steps beyond the effective start) or MAX_STEPS (absolute), not both" >&2
   exit 1
 fi
 
@@ -74,8 +81,8 @@ if [[ -n "${EXTRA_STEPS}" ]]; then
 fi
 
 if [[ -n "${MAX_STEPS}" && "${MAX_STEPS}" -le "${BASE_GLOBAL_STEP}" ]]; then
-  echo "MAX_STEPS=${MAX_STEPS} <= checkpoint global_step=${BASE_GLOBAL_STEP}: trainer would stop immediately." >&2
-  echo "use EXTRA_STEPS=<n> for steps beyond the checkpoint, or raise MAX_STEPS." >&2
+  echo "MAX_STEPS=${MAX_STEPS} <= effective start global_step=${BASE_GLOBAL_STEP}: trainer would stop immediately." >&2
+  echo "raise MAX_STEPS, or set CKPT_STEP_RESETS=1 if loading a pre-v2 checkpoint that resets to 0." >&2
   exit 1
 fi
 
